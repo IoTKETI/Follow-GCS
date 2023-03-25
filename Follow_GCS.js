@@ -12,8 +12,8 @@ const fs = require("fs");
 const mavlink = require('./mavlibrary/mavlink');
 
 // TODO: gcs_position에 GCS 위치 연동
-const gcs_position = '37.40363759298978, 127.16174915851377';
-// const gcs_position = '38.02809473658593, 127.14450863649374';
+// const gcs_position = '37.40363759298978, 127.16174915851377';
+const gcs_position = '37.40322371991492, 127.16346364704359';
 
 let drone_info = {};
 
@@ -192,7 +192,6 @@ function goto_command() {
 
     // set GUIDED Mode
     let target_mode = 'GUIDED';
-    console.log('send_set_mode_command', target_mode);
 
     setTimeout(send_set_mode_command, 10, cmd_topic, drone_info.system_id, target_mode);
 
@@ -202,6 +201,7 @@ function goto_command() {
     let alt = parseFloat(fc.global_position_int.relative_alt);
     // let speed = parseFloat(arr_cur_goto_position[3]);
     let speed = 5.0;
+    console.log('send_goto_command', lat, lon, alt, speed);
 
 
     setTimeout(send_goto_command, 50 + 20, cmd_topic, drone_info.system_id, lat, lon, alt);
