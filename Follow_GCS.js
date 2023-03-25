@@ -12,7 +12,7 @@ const fs = require("fs");
 const mavlink = require('./mavlibrary/mavlink');
 
 // TODO: gcs_position에 GCS 위치 연동
-const gcs_position = '37.364052275158066, 127.16448035688167';
+const gcs_position = '37.40363759298978, 127.16174915851377';
 // const gcs_position = '38.02809473658593, 127.14450863649374';
 
 let drone_info = {};
