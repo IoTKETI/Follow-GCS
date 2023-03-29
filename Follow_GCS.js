@@ -11,15 +11,18 @@ const fs = require("fs");
 
 const mavlink = require('./mavlibrary/mavlink');
 
-// TODO: gcs_position에 GCS 위치 연동
-// const gcs_position = '37.40363759298978, 127.16174915851377';
-const gcs_position = '37.40322371991492, 127.16346364704359';
+let target_position = '0, 0, 0';
+let dist = 0;
+let tracking = false;
+let cur_track = false;
+
+const dist_threshold = 20.0;
 
 let drone_info = {};
 
 let fc = {
     "heartbeat": {},
-    "global_position_int":{
+    "global_position_int": {
         "lat": 0,
         "lon": 0,
         "relative_alt": 20
@@ -29,6 +32,9 @@ let fc = {
 let mqtt_client = null;
 let drone_topic = '';
 let cmd_topic = '';
+let target_topic = '';
+
+let cur_mode = '';
 
 let ardupilot_mode_indexs_obj = {
     'STABILIZE': '00000000',
@@ -55,9 +61,34 @@ let ardupilot_mode_indexs_obj = {
     'SAFE_RTL': '15000000'
 }
 
+let ardupilot_mode_items_obj = {
+    '00000000': 'STABILIZE',
+    '01000000': 'ACRO',
+    '02000000': 'ALT_HOLD',
+    '03000000': 'AUTO',
+    '04000000': 'GUIDED',
+    '05000000': 'LOITER',
+    '06000000': 'RTL',
+    '07000000': 'CIRCLE',
+    '08000000': 'POSITION',
+    '09000000': 'LAND',
+    '0a000000': 'OF_LOITER',
+    '0b000000': 'DRIFT',
+    '0c000000': 'RESERVED_12',
+    '0d000000': 'SPORT',
+    '0e000000': 'FLIP',
+    '0f000000': 'AUTOTUNE',
+    '10000000': 'POS_HOLD',
+    '11000000': 'BRAKE',
+    '12000000': 'THROW',
+    '13000000': 'AVOID_ADSB',
+    '14000000': 'GUIDED_NOGPS',
+    '15000000': 'SAFE_RTL'
+}
+
 init();
 
-function mqtt_connect(serverip, d_topic) {
+function mqtt_connect(serverip, d_topic, t_topic) {
     if (mqtt_client === null) {
         let connectOptions = {
             host: serverip,
@@ -83,10 +114,18 @@ function mqtt_connect(serverip, d_topic) {
                     console.log('[mqtt_connect] drone_topic is subscribed: ' + d_topic + '/#');
                 });
             }
+            if (t_topic !== '') {  // GCS topic
+                mqtt_client.subscribe(t_topic + '/#', function () {
+                    console.log('[mqtt_connect] target_topic is subscribed: ' + t_topic + '/#');
+                });
+            }
         });
 
         mqtt_client.on('message', function (topic, message) {
             if (topic.includes(d_topic)) {
+                let _msg = message.toString('hex');
+                parseMavFromDrone(_msg);
+            } else if (topic.includes(t_topic)) {
                 let _msg = message.toString('hex');
                 parseMavFromDrone(_msg);
             }
@@ -101,21 +140,24 @@ function mqtt_connect(serverip, d_topic) {
 }
 
 let mavVersion = 'v1';
+let target_lat;
+let target_lon;
+let target_alt;
 
 function parseMavFromDrone(mavPacket) {
     try {
         let ver = mavPacket.substring(0, 2);
-        // let sys_id = '';
+        let sys_id = '';
         let msg_id;
         let base_offset;
 
         if (ver === 'fd') {
-            // sys_id = parseInt(mavPacket.substring(10, 12).toLowerCase(), 16);
+            sys_id = parseInt(mavPacket.substring(10, 12).toLowerCase(), 16);
             msg_id = parseInt(mavPacket.substring(18, 20) + mavPacket.substring(16, 18) + mavPacket.substring(14, 16), 16);
             mavVersion = 'v2';
             base_offset = 20;
         } else {
-            // sys_id = parseInt(mavPacket.substring(6, 8).toLowerCase(), 16);
+            sys_id = parseInt(mavPacket.substring(6, 8).toLowerCase(), 16);
             msg_id = parseInt(mavPacket.substring(10, 12).toLowerCase(), 16);
             mavVersion = 'v1';
             base_offset = 12;
@@ -136,12 +178,14 @@ function parseMavFromDrone(mavPacket) {
 
             fc.heartbeat = {};
             fc.heartbeat.type = Buffer.from(type, 'hex').readUInt8(0);
-            if (fc.heartbeat.type !== mavlink.MAV_TYPE_ADSB) {
+            if (fc.heartbeat.type !== mavlink.MAV_TYPE_ADSB && sys_id === parseInt(drone_info.system_id)) {
                 fc.heartbeat.autopilot = Buffer.from(autopilot, 'hex').readUInt8(0);
                 fc.heartbeat.base_mode = Buffer.from(base_mode, 'hex').readUInt8(0);
                 fc.heartbeat.custom_mode = Buffer.from(custom_mode, 'hex').readUInt32LE(0);
                 fc.heartbeat.system_status = Buffer.from(system_status, 'hex').readUInt8(0);
                 fc.heartbeat.mavlink_version = Buffer.from(mavlink_version, 'hex').readUInt8(0);
+
+                cur_mode = ardupilot_mode_items_obj[custom_mode];
             }
         } else if (msg_id === mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT) { // #33
             // var time_boot_ms = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
@@ -154,11 +198,41 @@ function parseMavFromDrone(mavPacket) {
             base_offset += 8;
             var relative_alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
 
-            fc.global_position_int = {};
-            fc.global_position_int.lat = Buffer.from(lat, 'hex').readInt32LE(0) / 10000000;
-            fc.global_position_int.lon = Buffer.from(lon, 'hex').readInt32LE(0) / 10000000;
-            fc.global_position_int.alt = Buffer.from(alt, 'hex').readInt32LE(0) / 1000;
-            fc.global_position_int.relative_alt = Buffer.from(relative_alt, 'hex').readInt32LE(0) / 1000;
+            if (sys_id === parseInt(drone_info.system_id)) {
+                fc.global_position_int = {};
+                fc.global_position_int.lat = Buffer.from(lat, 'hex').readInt32LE(0) / 10000000;
+                fc.global_position_int.lon = Buffer.from(lon, 'hex').readInt32LE(0) / 10000000;
+                fc.global_position_int.alt = Buffer.from(alt, 'hex').readInt32LE(0) / 1000;
+                fc.global_position_int.relative_alt = Buffer.from(relative_alt, 'hex').readInt32LE(0) / 1000;
+            } else {
+                target_lat = Buffer.from(lat, 'hex').readInt32LE(0) / 10000000;
+                target_lon = Buffer.from(lon, 'hex').readInt32LE(0) / 10000000;
+                target_alt = Buffer.from(relative_alt, 'hex').readInt32LE(0) / 1000;
+                target_position = target_lat + ', ' + target_lon + ', ' + target_alt;
+                // console.log(sys_id + ' gcs_position: ' + target_position);
+            }
+            let my_res = dfs_xy_conv('toXY', fc.global_position_int.lat, fc.global_position_int.lon);
+            console.log('my_res: ', my_res);
+
+            let target_res = dfs_xy_conv('toXY', target_lat, target_lon);
+            console.log('target_res: ', target_res);
+
+            dist = Math.sqrt(Math.pow(target_res.x - my_res.x, 2) + Math.pow(target_res.y - my_res.y, 2) + Math.pow((fc.global_position_int.relative_alt - target_alt), 2));
+            console.log('dist:', dist);
+            if (dist > dist_threshold) {
+                tracking = true;
+                cur_track = true;
+            } else {
+                // dist_threshold 만큼 가까워지면 멈추도록 명령
+                tracking = false;
+                if (cur_track) {
+                    let target_mode = 'LOITER';
+                    setTimeout(send_set_mode_command, 10, cmd_topic, drone_info.system_id, target_mode);
+                    target_mode = 'GUIDED';
+                    setTimeout(send_set_mode_command, 10, cmd_topic, drone_info.system_id, target_mode);
+                    cur_track = false;
+                }
+            }
         }
     } catch
         (e) {
@@ -183,30 +257,34 @@ function init() {
 
     drone_topic = '/Mobius/' + drone_info.gcs + '/Drone_Data/' + drone_info.drone;
     cmd_topic = '/Mobius/' + drone_info.gcs + '/GCS_Data/' + drone_info.drone;
-    mqtt_connect(drone_info.host, drone_topic);
 
-    setInterval(goto_command, 1000);
+    target_topic = '/Mobius/' + drone_info.follow_target.gcs + '/Drone_Data/' + drone_info.follow_target.drone;
+    mqtt_connect(drone_info.host, drone_topic, target_topic);
+
+    setInterval(goto_command, 5000);
 }
 
 function goto_command() {
+    if (cur_track) {
+        if (cur_mode !== 'GUIDED') {
+            // set GUIDED Mode
+            let target_mode = 'GUIDED';
 
-    // set GUIDED Mode
-    let target_mode = 'GUIDED';
+            setTimeout(send_set_mode_command, 10, cmd_topic, drone_info.system_id, target_mode);
+        }
+        let gcs_position_arr = target_position.split(', ');
+        let target_lat = parseFloat(gcs_position_arr[0]);
+        let target_lon = parseFloat(gcs_position_arr[1]);
+        let target_alt = parseFloat(gcs_position_arr[2]);
+        // let speed = parseFloat(arr_cur_goto_position[3]);
+        let speed = 5.0;
 
-    setTimeout(send_set_mode_command, 10, cmd_topic, drone_info.system_id, target_mode);
+        if (target_lat !== 0.0 && target_lon !== 0.0 && tracking) {
+            setTimeout(send_goto_command, 50 + 20, cmd_topic, drone_info.system_id, target_lat, target_lon, target_alt);
 
-    let gcs_position_arr = gcs_position.split(', ');
-    let lat = parseFloat(gcs_position_arr[0]);
-    let lon = parseFloat(gcs_position_arr[1]);
-    let alt = parseFloat(fc.global_position_int.relative_alt);
-    // let speed = parseFloat(arr_cur_goto_position[3]);
-    let speed = 5.0;
-    console.log('send_goto_command', lat, lon, alt, speed);
-
-
-    setTimeout(send_goto_command, 50 + 20, cmd_topic, drone_info.system_id, lat, lon, alt);
-
-    setTimeout(send_change_speed_command, 500 + 50, cmd_topic, drone_info.system_id, speed);
+            setTimeout(send_change_speed_command, 500 + 50, cmd_topic, drone_info.system_id, speed);
+        }
+    }
 }
 
 function mavlinkGenerateMessage(src_sys_id, src_comp_id, type, params) {
@@ -269,9 +347,9 @@ function mavlinkGenerateMessage(src_sys_id, src_comp_id, type, params) {
                     params.param6,
                     params.param7,
                     params.mission_type);
-                break;}
-    }
-    catch (e) {
+                break;
+        }
+    } catch (e) {
         console.log('MAVLINK EX:' + e);
     }
 
@@ -362,4 +440,66 @@ function send_change_speed_command(pub_topic, target_sys_id, target_speed) {
     } catch (ex) {
         console.log('[ERROR] ' + ex);
     }
+}
+
+const RE = 6371.00877; // 지구 반경(km)
+const GRID = 0.001; // 격자 간격(km)
+const SLAT1 = 30.0; // 투영 위도1(degree)
+const SLAT2 = 60.0; // 투영 위도2(degree)
+const OLON = 126.0; // 기준점 경도(degree)
+const OLAT = 38.0; // 기준점 위도(degree)
+const XO = 43; // 기준점 X좌표(GRID)
+const YO = 136; // 기1준점 Y좌표(GRID)
+
+function dfs_xy_conv(code, v1, v2) {
+    const DEGRAD = Math.PI / 180.0;
+    const RADDEG = 180.0 / Math.PI;
+
+    const re = RE / GRID;
+    const slat1 = SLAT1 * DEGRAD;
+    const slat2 = SLAT2 * DEGRAD;
+    const olon = OLON * DEGRAD;
+    const olat = OLAT * DEGRAD;
+
+    let sn = Math.tan(Math.PI * 0.25 + slat2 * 0.5) / Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    sn = Math.log(Math.cos(slat1) / Math.cos(slat2)) / Math.log(sn);
+    let sf = Math.tan(Math.PI * 0.25 + slat1 * 0.5);
+    sf = Math.pow(sf, sn) * Math.cos(slat1) / sn;
+    var ro = Math.tan(Math.PI * 0.25 + olat * 0.5);
+    ro = re * sf / Math.pow(ro, sn);
+    let rs = {};
+    if (code === "toXY") {
+        rs['lat'] = v1;
+        rs['lng'] = v2;
+        var ra = Math.tan(Math.PI * 0.25 + (v1) * DEGRAD * 0.5);
+        ra = re * sf / Math.pow(ra, sn);
+        var theta = v2 * DEGRAD - olon;
+        if (theta > Math.PI) theta -= 2.0 * Math.PI;
+        if (theta < -Math.PI) theta += 2.0 * Math.PI;
+        theta *= sn;
+        rs['x'] = Math.floor(ra * Math.sin(theta) + XO + 0.5);
+        rs['y'] = Math.floor(ro - ra * Math.cos(theta) + YO + 0.5);
+    } else {
+        rs['x'] = v1;
+        rs['y'] = v2;
+        let xn = v1 - XO;
+        let yn = ro - v2 + YO;
+        ra = Math.sqrt(xn * xn + yn * yn);
+        if (sn < 0.0) -ra;
+        let alat = Math.pow((re * sf / ra), (1.0 / sn));
+        alat = 2.0 * Math.atan(alat) - Math.PI * 0.5;
+
+        if (Math.abs(xn) <= 0.0) {
+            theta = 0.0;
+        } else {
+            if (Math.abs(yn) <= 0.0) {
+                theta = Math.PI * 0.5;
+                if (xn < 0.0) -theta;
+            } else theta = Math.atan2(xn, yn);
+        }
+        let alon = theta / sn + olon;
+        rs['lat'] = alat * RADDEG;
+        rs['lng'] = alon * RADDEG;
+    }
+    return rs;
 }
