@@ -100,7 +100,8 @@ function mqtt_connect(serverip, d_topic, t_topic) {
             protocolVersion: 4,
             clean: true,
             reconnectPeriod: 2000,
-            connectTimeout: 2000,
+            connectTimeout: 30000,
+            queueQoSZero: false,
             rejectUnauthorized: false
         }
 
@@ -211,14 +212,10 @@ function parseMavFromDrone(mavPacket) {
                 target_position = target_lat + ', ' + target_lon + ', ' + target_alt;
                 // console.log(sys_id + ' gcs_position: ' + target_position);
             }
-            let my_res = dfs_xy_conv('toXY', fc.global_position_int.lat, fc.global_position_int.lon);
-            console.log('my_res: ', my_res);
 
-            let target_res = dfs_xy_conv('toXY', target_lat, target_lon);
-            console.log('target_res: ', target_res);
-
-            dist = Math.sqrt(Math.pow(target_res.x - my_res.x, 2) + Math.pow(target_res.y - my_res.y, 2) + Math.pow((fc.global_position_int.relative_alt - target_alt), 2));
+            let dist = calcDistance(fc.global_position_int.lat, fc.global_position_int.lon, 0, target_lat, target_lon,0);
             console.log('dist:', dist);
+
             if (dist > dist_threshold) {
                 tracking = true;
                 cur_track = true;
@@ -245,13 +242,14 @@ function init() {
         drone_info = JSON.parse(fs.readFileSync('../drone_info.json', 'utf8'));
     } catch (e) {
         console.log('can not find [ ../drone_info.json ] file');
-        drone_info.host = "121.147.228.240";
-        drone_info.drone = "KETI_Simul_1";
+        drone_info.id = "Dione";
+        drone_info.approval_gcs = "MUV";
+        drone_info.host = "121.137.228.240";
+        drone_info.drone = "Drone1";
         drone_info.gcs = "KETI_GCS";
         drone_info.type = "ardupilot";
-        drone_info.system_id = 105;
-        drone_info.kcmvp = "off";
-        drone_info.id = "UA";
+        drone_info.system_id = 1;
+        drone_info.gcs_ip = "192.168.1.150";
         // fs.writeFileSync('../drone_info.json', JSON.stringify(drone_info, null, 4), 'utf8');
     }
 
@@ -502,4 +500,29 @@ function dfs_xy_conv(code, v1, v2) {
         rs['lng'] = alon * RADDEG;
     }
     return rs;
+}
+
+function calcDistance(x1, y1, a1, x2, y2, a2) {
+    /*
+        x1: Latitude of the first point
+        y1: Longitude of the first point
+        a1: Altitude of the first point
+        x2: Latitude of the second point
+        y2: Longitude of the second point
+        a2: Altitude of the second point
+    */
+    const R = 6371e3; // R is earth’s radius(metres) (mean radius = 6,371km)
+    const φ1 = x1 * Math.PI / 180; // φ(latitude), λ(longitude) in radians
+    const φ2 = x2 * Math.PI / 180;
+    const Δφ = (x2 - x1) * Math.PI / 180;
+    const Δλ = (y2 - y1) * Math.PI / 180;
+
+    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
+        Math.cos(φ1) * Math.cos(φ2) *
+        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+
+    let d = R * c + Math.sqrt(Math.pow(a1 - a2, 2)); // in metres
+
+    return d
 }
