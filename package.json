@@ -1,22 +1,25 @@
 {
-  "name": "Follow-GCS",
-  "version": "1.0.0",
-  "description": "When the drone and telemetry are connected, it continuously sends go-to commands to the drone to follow the moving GCS.",
-  "main": "Follow_GCS.js",
-  "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
-  "keywords": [],
-  "author": "Wonseok Jung, Autonomous IoT Research Center, KETI",
-  "license": "ISC",
-  "dependencies": {
-    "axios": "^1.1.3",
-    "child_process": "^1.0.2",
-    "moment": "^2.24.0",
-    "moment-timezone": "^0.5.38",
-    "mqtt": "^3.0.0",
-    "nanoid": "^3.1.30",
-    "jspack": "^0.0.4",
-    "underscore": "^1.13.6"
-  }
+    "name": "Follow-GCS",
+    "version": "1.0.0",
+    "description": "When the drone and telemetry are connected, it continuously sends go-to commands to the drone to follow the moving GCS.",
+    "main": "Follow_Drone.js",
+    "scripts": {
+        "test": "echo \"Error: no test specified\" && exit 1"
+    },
+    "keywords": [],
+    "author": "Wonseok Jung, Autonomous IoT Research Center, KETI",
+    "license": "ISC",
+    "dependencies": {
+        "@serialport/parser-readline": "^10.4.0",
+        "axios": "^1.1.3",
+        "child_process": "^1.0.2",
+        "gps": "^0.6.1",
+        "jspack": "^0.0.4",
+        "moment": "^2.24.0",
+        "moment-timezone": "^0.5.38",
+        "mqtt": "^3.0.0",
+        "nanoid": "^3.1.30",
+        "serialport": "^10.4.0",
+        "underscore": "^1.13.6"
+    }
 }
