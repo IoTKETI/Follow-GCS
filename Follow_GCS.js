@@ -97,23 +97,10 @@ let flag_base_mode = 0;
 init();
 
 function init() {
-    // try {
-    //     drone_info = JSON.parse(fs.readFileSync('../drone_info.json', 'utf8'));
-    // } catch (e) {
-    //     console.log('can not find [ ../drone_info.json ] file');
-    //     drone_info.id = "Dione";
-    //     drone_info.approval_gcs = "MUV";
-    //     drone_info.host = "121.137.228.240";
-    //     drone_info.drone = "Drone1";
-    //     drone_info.gcs = "KETI_GCS";
-    //     drone_info.type = "ardupilot";
-    //     drone_info.system_id = 1;
-    //     drone_info.gcs_ip = "192.168.1.150";
-    // }
     try {
-        drone_info = JSON.parse(fs.readFileSync('./drone_info.json', 'utf8'));
+        drone_info = JSON.parse(fs.readFileSync('../drone_info.json', 'utf8'));
     } catch (e) {
-        console.log('can not find [ ./drone_info.json ] file');
+        console.log('can not find [ ../drone_info.json ] file');
         drone_info.id = "Dione";
         drone_info.approval_gcs = "MUV";
         drone_info.host = "121.137.228.240";
