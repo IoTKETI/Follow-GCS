@@ -38,6 +38,7 @@ let cmd_topic = '';
 let gcs_lat = 0;
 let gcs_lon = 0;
 let gcs_alt = 0;
+let gcs_hdg = 0;
 
 let my_sortie_name = 'unknown';
 let flag_base_mode = 0;
@@ -86,6 +87,8 @@ let flag_base_mode = 0;
 //             gcs_lon = data.lon;
 //             // gcs_alt = data.alt;
 //         }
+//     } else if (data.type === 'VTG') {
+//         gcs_hdg = data.trackMagnetic;
 //     }
 // });
 
@@ -275,6 +278,7 @@ function send_change_home_position_command(target_name, pub_topic, target_sys_id
     // gcs_lon = 1271617624;
     // gcs_lat = 374031467;
     // gcs_lon = 1271608312;
+    let h_pos = get_point_dist((gcs_lat / 10000000), (gcs_lon / 10000000), 0.005, gcs_hdg);
 
     var btn_params = {};
     btn_params.target_system = target_sys_id;
@@ -287,8 +291,8 @@ function send_change_home_position_command(target_name, pub_topic, target_sys_id
     btn_params.param2 = 0;
     btn_params.param3 = 0;
     btn_params.param4 = 0;
-    btn_params.x = gcs_lat;
-    btn_params.y = gcs_lon;
+    btn_params.x = parseInt((h_pos.lat * 10000000).toFixed(0));
+    btn_params.y = parseInt((h_pos.lon * 10000000).toFixed(0));
     btn_params.z = 0; // altitude of GCS
 
     try {
@@ -296,7 +300,7 @@ function send_change_home_position_command(target_name, pub_topic, target_sys_id
         if (msg == null) {
             console.log("mavlink message is null");
         } else {
-            console.log(gcs_lat, gcs_lon);
+            console.log(gcs_lat, gcs_lon, btn_params.x, btn_params.y);
             mqtt_client.publish(pub_topic, msg);
         }
     } catch (ex) {
@@ -407,3 +411,19 @@ function calcDistance(x1, y1, a1, x2, y2, a2) {
     return d
 }
 
+const get_point_dist = (latitude, longitude, distanceInKm, bearingInDegrees) => {
+    const R = 6378.1;
+    const dr = Math.PI / 180;
+    const bearing = bearingInDegrees * dr;
+    let lat = latitude * dr;
+    let lon = longitude * dr;
+
+    lat = Math.asin(Math.sin(lat) * Math.cos(distanceInKm / R) + Math.cos(lat) * Math.sin(distanceInKm / R) * Math.cos(bearing));
+    lon += Math.atan2(
+        Math.sin(bearing) * Math.sin(distanceInKm / R) * Math.cos(lat),
+        Math.cos(distanceInKm / R) - Math.sin(lat) * Math.sin(lat)
+    );
+    lat /= dr;
+    lon /= dr;
+    return {lat, lon};
+}
