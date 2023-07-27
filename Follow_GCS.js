@@ -6,13 +6,13 @@ const mqtt = require("mqtt");
 const {nanoid} = require("nanoid");
 const fs = require("fs");
 const {SerialPort} = require("serialport");
+const {ReadlineParser} = require("@serialport/parser-readline");
 const GPS = require("gps");
 
 const mavlink = require('./mavlibrary/mavlink');
-const {ReadlineParser} = require("@serialport/parser-readline");
 
 let gpsPort = null;
-let gpsPortNum = 'COM3';
+let gpsPortNum = 'COM5';
 let gpsBaudrate = '9600';
 gpsPortOpening();
 
