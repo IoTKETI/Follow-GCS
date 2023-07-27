@@ -5,20 +5,20 @@
 const mqtt = require("mqtt");
 const {nanoid} = require("nanoid");
 const fs = require("fs");
-const SerialPort = require("serialport");
-const SerialPortParser = require("@serialport/parser-readline");
+const {SerialPort} = require("serialport");
 const GPS = require("gps");
 
 const mavlink = require('./mavlibrary/mavlink');
+const {ReadlineParser} = require("@serialport/parser-readline");
 
-// let gpsPort = null;
-// let gpsPortNum = 'COM16';
-// let gpsBaudrate = '9600';
-// gpsPortOpening();
+let gpsPort = null;
+let gpsPortNum = 'COM3';
+let gpsBaudrate = '9600';
+gpsPortOpening();
 
-// const gps = new GPS();
+const gps = new GPS();
 
-// const parser = gpsPort.pipe(new SerialPortParser());
+const parser = gpsPort.pipe(new ReadlineParser());
 
 let drone_info = {};
 
@@ -37,65 +37,65 @@ let cmd_topic = '';
 
 let gcs_lat = 0;
 let gcs_lon = 0;
-let gcs_alt = 0;
-let gcs_hdg = 0;
 
 let my_sortie_name = 'unknown';
 let flag_base_mode = 0;
 
-// function gpsPortOpening() {
-//     if (gpsPort == null) {
-//         gpsPort = new SerialPort(gpsPortNum, {
-//             baudRate: parseInt(gpsBaudrate, 10),
-//         });
+function gpsPortOpening() {
+    if (gpsPort == null) {
+        gpsPort = new SerialPort({
+            path: gpsPortNum,
+            baudRate: parseInt(gpsBaudrate, 10),
+        });
 
-//         gpsPort.on('open', gpsPortOpen);
-//         gpsPort.on('close', gpsPortClose);
-//         gpsPort.on('error', gpsPortError);
-//         // gpsPort.on('data', gpsPortData);
-//     } else {
-//         if (gpsPort.isOpen) {
-//             gpsPort.close();
-//             gpsPort = null;
-//             setTimeout(gpsPortOpening, 2000);
-//         } else {
-//             gpsPort.open();
-//         }
-//     }
-// }
+        gpsPort.on('open', gpsPortOpen);
+        gpsPort.on('close', gpsPortClose);
+        gpsPort.on('error', gpsPortError);
+        // gpsPort.on('data', gpsPortData);
+    } else {
+        if (gpsPort.isOpen) {
+            gpsPort.close();
+            gpsPort = null;
+            setTimeout(gpsPortOpening, 2000);
+        } else {
+            gpsPort.open();
+        }
+    }
+}
 
-// function gpsPortOpen() {
-//     console.log('gpsPort(' + gpsPort.path + ' Data rate: ' + gpsPort.baudRate + ' open.');
-// }
+function gpsPortOpen() {
+    console.log('gpsPort ' + gpsPort.path + ' Data rate: ' + gpsPort.baudRate + ' open.');
+}
 
-// function gpsPortClose() {
-//     console.log('gpsPort closed.');
+function gpsPortClose() {
+    console.log('gpsPort closed.');
 
-//     setTimeout(gpsPortOpening, 2000);
-// }
+    setTimeout(gpsPortOpening, 2000);
+}
 
-// function gpsPortError(error) {
-//     console.log('[gpsPort error]: ' + error.message);
+function gpsPortError(error) {
+    console.log('[gpsPort error]: ' + error.message);
 
-//     setTimeout(gpsPortOpening, 2000);
-// }
+    setTimeout(gpsPortOpening, 2000);
+}
 
-// gps.on("data", data => {
-//     if (data.type === 'GGA') {
-//         if (data.quality != null) {
-//             gcs_lat = data.lat;
-//             gcs_lon = data.lon;
-//             // gcs_alt = data.alt;
-//         }
-//     } else if (data.type === 'VTG') {
-//         gcs_hdg = data.trackMagnetic;
-//     }
-// });
+gps.on("data", data => {
+    if (data.type === 'GGA') {
+        console.log('GGA', data);
+        if (data.quality != null) {
+            gcs_lat = data.lat;
+            gcs_lon = data.lon;
+            // gcs_alt = data.alt;
+        }
+    } else if (data.type === 'VTG') {
+        console.log('VTG', data);
+    }
+});
 
-// parser.on("data", data => {
-//     // console.log('parser', data)
-//     gps.update(data);
-// });
+parser.on("data", data => {
+    // console.log('parser', data)
+    gps.update(data);
+});
 
 init();
 
@@ -160,8 +160,6 @@ function mqtt_connect(serverip, d_topic) {
 
         mqtt_client.on('error', function (err) {
             console.log('[mqtt] (error) ' + err.message);
-            mqtt_client = null;
-            mqtt_connect(serverip);
         })
     }
 }
@@ -272,13 +270,16 @@ function parseMavFromDrone(mavPacket) {
 }
 
 function send_change_home_position_command(target_name, pub_topic, target_sys_id) {
+    // let h_pos = get_point_dist((gcs_lat / 10000000), (gcs_lon / 10000000), 0.005, gcs_hdg);
+    // gcs_lat = parseInt((h_pos.lat * 10000000).toFixed(0));
+    // gcs_lon = parseInt((h_pos.lon * 10000000).toFixed(0));
+
     // gcs_lat = 374026844;
     // gcs_lon = 1271600130;
     // gcs_lat = 374036621;
     // gcs_lon = 1271617624;
     // gcs_lat = 374031467;
     // gcs_lon = 1271608312;
-    let h_pos = get_point_dist((gcs_lat / 10000000), (gcs_lon / 10000000), 0.005, gcs_hdg);
 
     var btn_params = {};
     btn_params.target_system = target_sys_id;
@@ -291,8 +292,8 @@ function send_change_home_position_command(target_name, pub_topic, target_sys_id
     btn_params.param2 = 0;
     btn_params.param3 = 0;
     btn_params.param4 = 0;
-    btn_params.x = parseInt((h_pos.lat * 10000000).toFixed(0));
-    btn_params.y = parseInt((h_pos.lon * 10000000).toFixed(0));
+    btn_params.x = gcs_lat;
+    btn_params.y = gcs_lon;
     btn_params.z = 0; // altitude of GCS
 
     try {

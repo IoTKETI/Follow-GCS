@@ -134,8 +134,6 @@ function mqtt_connect(serverip, d_topic, t_topic) {
 
         mqtt_client.on('error', function (err) {
             console.log('[mqtt] (error) ' + err.message);
-            mqtt_client = null;
-            mqtt_connect(serverip);
         })
     }
 }
