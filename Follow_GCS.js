@@ -85,8 +85,8 @@ gps.on("data", data => {
     if (data.type === 'GGA') {
         console.log('GGA', data);
         if (data.quality != null) {
-            gcs_lat = data.lat;
-            gcs_lon = data.lon;
+            gcs_lat = data.lat * 10000000;
+            gcs_lon = data.lon * 10000000;
             // gcs_alt = data.alt;
         }
     }
@@ -330,7 +330,7 @@ function send_change_home_position_command(target_name, pub_topic, target_sys_id
             console.log("mavlink message is null");
         }
         else {
-            console.log('set Home_Position -', btn_params.x, btn_params.y, 'get Target Drone Position -', gcs_lat, gcs_lon);
+            console.log('set Home_Position -', btn_params.x / 10000000, btn_params.y / 10000000, 'get Target Drone Position -', gcs_lat, gcs_lon);
             mqtt_client.publish(pub_topic, msg);
         }
     }
