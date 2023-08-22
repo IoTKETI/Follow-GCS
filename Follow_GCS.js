@@ -275,11 +275,11 @@ function parseMavFromDrone(mavPacket) {
             }
         }
         else if (msg_id === mavlink.MAVLINK_MSG_ID_HOME_POSITION) {
-            let lat = mavPacket.substring(base_offset, base_offset+8).toLowerCase();
+            let lat = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            let lon = mavPacket.substring(base_offset, base_offset+8).toLowerCase();
+            let lon = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            let alt = mavPacket.substring(base_offset, base_offset+8).toLowerCase();
+            let alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
             let relative_alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             fc.home_position = {};
@@ -288,7 +288,7 @@ function parseMavFromDrone(mavPacket) {
             fc.home_position.alt = Buffer.from(alt, 'hex').readInt32LE(0) / 1000;
             fc.home_position.relative_alt = Buffer.from(relative_alt, 'hex').readInt32LE(0) / 1000;
 
-            console.log(fc.home_position);
+            console.log('target Drone Home_Position -', fc.home_position);
         }
     }
     catch
@@ -330,7 +330,7 @@ function send_change_home_position_command(target_name, pub_topic, target_sys_id
             console.log("mavlink message is null");
         }
         else {
-            // console.log(gcs_lat, gcs_lon, btn_params.x, btn_params.y);
+            console.log('set Home_Position -', btn_params.x, btn_params.y, 'get Target Drone Position -', gcs_lat, gcs_lon);
             mqtt_client.publish(pub_topic, msg);
         }
     }
