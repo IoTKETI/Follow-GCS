@@ -31,7 +31,7 @@ let fc = {
     }
 };
 
-let mqtt_client = null;
+let mobius_mqtt_client = null;
 let drone_topic = '';
 let cmd_topic = '';
 
@@ -42,7 +42,7 @@ let my_sortie_name = 'unknown';
 let flag_base_mode = 0;
 
 function gpsPortOpening() {
-    if (gpsPort == null) {
+    if (!gpsPort) {
         gpsPort = new SerialPort({
             path: gpsPortNum,
             baudRate: parseInt(gpsBaudrate, 10),
@@ -84,14 +84,14 @@ function gpsPortError(error) {
 gps.on("data", data => {
     if (data.type === 'GGA') {
         console.log('GGA', data);
-        if (data.quality != null) {
-            gcs_lat = data.lat * 10000000;
-            gcs_lon = data.lon * 10000000;
+        if (data.quality) {
+            gcs_lat = data.lat;
+            gcs_lon = data.lon;
             // gcs_alt = data.alt;
         }
     }
     else if (data.type === 'VTG') {
-        console.log('VTG', data);
+        // console.log('VTG', data);
     }
 });
 
@@ -121,13 +121,13 @@ function init() {
     drone_topic = '/Mobius/' + drone_info.gcs + '/Drone_Data/' + drone_info.drone;
     cmd_topic = '/Mobius/' + drone_info.gcs + '/GCS_Data/' + drone_info.drone;
 
-    mqtt_connect(drone_info.host, drone_topic);
+    mobius_mqtt_connect(drone_info.host, drone_topic);
 
     setInterval(send_change_home_position_command, 2000, drone_info.drone, cmd_topic, drone_info.system_id);
 }
 
-function mqtt_connect(serverip, d_topic) {
-    if (mqtt_client === null) {
+function mobius_mqtt_connect(serverip, d_topic) {
+    if (!mobius_mqtt_client) {
         let connectOptions = {
             host: serverip,
             port: 1883,
@@ -143,28 +143,28 @@ function mqtt_connect(serverip, d_topic) {
             rejectUnauthorized: false
         }
 
-        mqtt_client = mqtt.connect(connectOptions);
+        mobius_mqtt_client = mqtt.connect(connectOptions);
 
-        mqtt_client.on('connect', function () {
-            console.log('mqtt is connected to (' + serverip + ')');
+        mobius_mqtt_client.on('connect', () => {
+            console.log('mobius_mqtt_client is connected to (' + serverip + ')');
 
             if (d_topic !== '') {  // GCS topic
-                mqtt_client.subscribe(d_topic + '/#', function () {
-                    console.log('[mqtt_connect] drone_topic is subscribed: ' + d_topic + '/#');
+                mobius_mqtt_client.subscribe(d_topic + '/#', () => {
+                    console.log('[mobius_mqtt_client] drone_topic is subscribed: ' + d_topic + '/#');
                 });
             }
         });
 
-        mqtt_client.on('message', function (topic, message) {
+        mobius_mqtt_client.on('message', (topic, message) => {
             if (topic.includes(d_topic)) {
                 let _msg = message.toString('hex');
                 parseMavFromDrone(_msg);
             }
-        })
+        });
 
-        mqtt_client.on('error', function (err) {
-            console.log('[mqtt] (error) ' + err.message);
-        })
+        mobius_mqtt_client.on('error', (err) => {
+            console.log('[mobius_mqtt_client] (error) ' + err.message);
+        });
     }
 }
 
@@ -231,15 +231,11 @@ function parseMavFromDrone(mavPacket) {
                         flag_base_mode++;
                         if (flag_base_mode === 3) {
                             my_sortie_name = 'arm';
-                            gcs_lat = (fc.global_position_int.lat * 10000000).toFixed(0);
-                            gcs_lon = (fc.global_position_int.lon * 10000000).toFixed(0);
                         }
                     }
                     else {
                         flag_base_mode = 0;
                         my_sortie_name = 'disarm';
-                        gcs_lat = (fc.global_position_int.lat * 10000000).toFixed(0);
-                        gcs_lon = (fc.global_position_int.lon * 10000000).toFixed(0);
                     }
                 }
                 else if (my_sortie_name === 'arm') {
@@ -249,8 +245,6 @@ function parseMavFromDrone(mavPacket) {
                     else {
                         flag_base_mode = 0;
                         my_sortie_name = 'disarm';
-                        gcs_lat = (fc.global_position_int.lat * 10000000).toFixed(0);
-                        gcs_lon = (fc.global_position_int.lon * 10000000).toFixed(0);
                     }
                 }
             }
@@ -288,7 +282,7 @@ function parseMavFromDrone(mavPacket) {
             fc.home_position.alt = Buffer.from(alt, 'hex').readInt32LE(0) / 1000;
             fc.home_position.relative_alt = Buffer.from(relative_alt, 'hex').readInt32LE(0) / 1000;
 
-            console.log('target Drone Home_Position -', fc.home_position);
+            console.log('target Drone Home_Position -', JSON.stringify(fc.home_position));
         }
     }
     catch
@@ -298,58 +292,49 @@ function parseMavFromDrone(mavPacket) {
 }
 
 function send_change_home_position_command(target_name, pub_topic, target_sys_id) {
-    // let h_pos = get_point_dist((gcs_lat / 10000000), (gcs_lon / 10000000), 0.005, gcs_hdg);
-    // gcs_lat = parseInt((h_pos.lat * 10000000).toFixed(0));
-    // gcs_lon = parseInt((h_pos.lon * 10000000).toFixed(0));
+    if ((33 < gcs_lat && gcs_lat < 43) && ((124 < gcs_lon && gcs_lon < 132))) {
+        let btn_params = {};
+        btn_params.target_system = target_sys_id;
+        btn_params.target_component = 1;
+        btn_params.frame = mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT;
+        btn_params.command = mavlink.MAV_CMD_DO_SET_HOME;
+        btn_params.current = 0;
+        btn_params.autocontinue = 0;
+        btn_params.param1 = 0;
+        btn_params.param2 = 0;
+        btn_params.param3 = 0;
+        btn_params.param4 = 0;
+        btn_params.x = gcs_lat * 10000000;
+        btn_params.y = gcs_lon * 10000000;
+        btn_params.z = 0; // altitude of GCS
 
-    // gcs_lat = 374026844;
-    // gcs_lon = 1271600130;
-    // gcs_lat = 374036621;
-    // gcs_lon = 1271617624;
-    // gcs_lat = 374031467;
-    // gcs_lon = 1271608312;
-
-    var btn_params = {};
-    btn_params.target_system = target_sys_id;
-    btn_params.target_component = 1;
-    btn_params.frame = mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT;
-    btn_params.command = mavlink.MAV_CMD_DO_SET_HOME;
-    btn_params.current = 0;
-    btn_params.autocontinue = 0;
-    btn_params.param1 = 0;
-    btn_params.param2 = 0;
-    btn_params.param3 = 0;
-    btn_params.param4 = 0;
-    btn_params.x = gcs_lat;
-    btn_params.y = gcs_lon;
-    btn_params.z = 0; // altitude of GCS
-
-    try {
-        var msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_COMMAND_INT, btn_params);
-        if (msg == null) {
-            console.log("mavlink message is null");
+        try {
+            let msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_COMMAND_INT, btn_params);
+            if (!msg) {
+                console.log("[send_change_home_position_command] mavlink message is null");
+            }
+            else {
+                if (mobius_mqtt_client) {
+                    console.log('set Home_Position -', btn_params.x / 10000000, btn_params.y / 10000000, 'get Target Drone Position -', fc.global_position_int.lat, fc.global_position_int.lat);
+                    mobius_mqtt_client.publish(pub_topic, msg);
+                }
+            }
         }
-        else {
-            console.log('set Home_Position -', btn_params.x / 10000000, btn_params.y / 10000000, 'get Target Drone Position -', gcs_lat, gcs_lon);
-            mqtt_client.publish(pub_topic, msg);
+        catch (ex) {
+            console.log('[ERROR] ' + ex);
         }
-    }
-    catch (ex) {
-        console.log('[ERROR] ' + ex);
     }
 }
 
 function mavlinkGenerateMessage(src_sys_id, src_comp_id, type, params) {
     const mavlinkParser = new MAVLink(null/*logger*/, src_sys_id, src_comp_id, mavVersion);
+    let mavMsg = null;
+    let genMsg = null;
     try {
-        var mavMsg = null;
-        var genMsg = null;
-        //var targetSysId = sysId;
-        // eslint-disable-next-line no-unused-vars
-        //var targetCompId = (params.targetCompId === undefined) ? 0 : params.targetCompId;
+        //let targetSysId = sysId;
+        let targetCompId = (params.targetCompId === undefined) ? 0 : params.targetCompId;
 
         switch (type) {
-            // MESSAGE ////////////////////////////////////
             case mavlink.MAVLINK_MSG_ID_COMMAND_LONG:
                 mavMsg = new mavlink.messages.command_long(
                     params.target_system,
@@ -362,7 +347,8 @@ function mavlinkGenerateMessage(src_sys_id, src_comp_id, type, params) {
                     params.param4,
                     params.param5,
                     params.param6,
-                    params.param7);
+                    params.param7
+                );
                 break;
             case mavlink.MAVLINK_MSG_ID_COMMAND_INT:
                 mavMsg = new mavlink.messages.command_int(
@@ -380,30 +366,6 @@ function mavlinkGenerateMessage(src_sys_id, src_comp_id, type, params) {
                     params.y,
                     params.z);
                 break;
-            case mavlink.MAVLINK_MSG_ID_SET_MODE:
-                mavMsg = new mavlink.messages.set_mode(
-                    params.target_system,
-                    params.base_mode,
-                    params.custom_mode);
-                break;
-            case mavlink.MAVLINK_MSG_ID_MISSION_ITEM:
-                mavMsg = new mavlink.messages.mission_item(
-                    params.target_system,
-                    params.target_component,
-                    params.seq,
-                    params.frame,
-                    params.command,
-                    params.current,
-                    params.autocontinue,
-                    params.param1,
-                    params.param2,
-                    params.param3,
-                    params.param4,
-                    params.param5,
-                    params.param6,
-                    params.param7,
-                    params.mission_type);
-                break;
         }
     }
     catch (e) {
@@ -412,50 +374,8 @@ function mavlinkGenerateMessage(src_sys_id, src_comp_id, type, params) {
 
     if (mavMsg) {
         genMsg = Buffer.from(mavMsg.pack(mavlinkParser));
-        // console.log('>>>>> MAVLINK OUTGOING MSG: ' + genMsg.toString('hex'));
+        //console.log('>>>>> MAVLINK OUTGOING MSG: ' + genMsg.toString('hex'));
     }
 
     return genMsg;
-}
-
-function calcDistance(x1, y1, a1, x2, y2, a2) {
-    /*
-        x1: Latitude of the first point
-        y1: Longitude of the first point
-        a1: Altitude of the first point
-        x2: Latitude of the second point
-        y2: Longitude of the second point
-        a2: Altitude of the second point
-    */
-    const R = 6371e3; // R is earth’s radius(metres) (mean radius = 6,371km)
-    const φ1 = x1 * Math.PI / 180; // φ(latitude), λ(longitude) in radians
-    const φ2 = x2 * Math.PI / 180;
-    const Δφ = (x2 - x1) * Math.PI / 180;
-    const Δλ = (y2 - y1) * Math.PI / 180;
-
-    const a = Math.sin(Δφ / 2) * Math.sin(Δφ / 2) +
-        Math.cos(φ1) * Math.cos(φ2) *
-        Math.sin(Δλ / 2) * Math.sin(Δλ / 2);
-    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-
-    let d = R * c + Math.sqrt(Math.pow(a1 - a2, 2)); // in metres
-
-    return d
-}
-
-const get_point_dist = (latitude, longitude, distanceInKm, bearingInDegrees) => {
-    const R = 6378.1;
-    const dr = Math.PI / 180;
-    const bearing = bearingInDegrees * dr;
-    let lat = latitude * dr;
-    let lon = longitude * dr;
-
-    lat = Math.asin(Math.sin(lat) * Math.cos(distanceInKm / R) + Math.cos(lat) * Math.sin(distanceInKm / R) * Math.cos(bearing));
-    lon += Math.atan2(
-        Math.sin(bearing) * Math.sin(distanceInKm / R) * Math.cos(lat),
-        Math.cos(distanceInKm / R) - Math.sin(lat) * Math.sin(lat)
-    );
-    lat /= dr;
-    lon /= dr;
-    return {lat, lon};
 }
