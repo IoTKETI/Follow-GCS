@@ -317,7 +317,7 @@ function send_request_data_stream_command(req_stream_id, req_message_rate, start
             console.log("[send_request_data_stream_command] mavlink message is null");
         }
         else {
-            if (!mavPort) {
+            if (mavPort) {
                 if (mavPort.isOpen) {
                     mavPort.write(msg);
                 }
@@ -344,7 +344,7 @@ function send_param_get_command(param_id) {
         else {
             //console.log('Send param get command of ' + param_id + ' to %s, ' + 'msg: ' + msg.toString('hex') + '\n',
             // target_name);
-            if (!mavPort) {
+            if (mavPort) {
                 if (mavPort.isOpen) {
                     mavPort.write(msg);
                 }
