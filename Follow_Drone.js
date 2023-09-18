@@ -29,7 +29,7 @@ let fc = {
     }
 };
 
-let mqtt_client = null;
+let mobius_mqtt_client = null;
 let drone_topic = '';
 let cmd_topic = '';
 let target_topic = '';
@@ -88,8 +88,8 @@ let ardupilot_mode_items_obj = {
 
 init();
 
-function mqtt_connect(serverip, d_topic, t_topic) {
-    if (mqtt_client === null) {
+function mobius_mqtt_connect(serverip, d_topic, t_topic) {
+    if (!mobius_mqtt_client) {
         let connectOptions = {
             host: serverip,
             port: 1883,
@@ -105,24 +105,24 @@ function mqtt_connect(serverip, d_topic, t_topic) {
             rejectUnauthorized: false
         }
 
-        mqtt_client = mqtt.connect(connectOptions);
+        mobius_mqtt_client = mqtt.connect(connectOptions);
 
-        mqtt_client.on('connect', function () {
+        mobius_mqtt_client.on('connect', () => {
             console.log('mqtt is connected to (' + serverip + ')');
 
             if (d_topic !== '') {  // GCS topic
-                mqtt_client.subscribe(d_topic + '/#', function () {
-                    console.log('[mqtt_connect] drone_topic is subscribed: ' + d_topic + '/#');
+                mobius_mqtt_client.subscribe(d_topic + '/#', () => {
+                    console.log('[mobius_mqtt_connect] drone_topic is subscribed: ' + d_topic + '/#');
                 });
             }
             if (t_topic !== '') {  // GCS topic
-                mqtt_client.subscribe(t_topic + '/#', function () {
-                    console.log('[mqtt_connect] target_topic is subscribed: ' + t_topic + '/#');
+                mobius_mqtt_client.subscribe(t_topic + '/#', () => {
+                    console.log('[mobius_mqtt_connect] target_topic is subscribed: ' + t_topic + '/#');
                 });
             }
         });
 
-        mqtt_client.on('message', function (topic, message) {
+        mobius_mqtt_client.on('message', (topic, message) => {
             if (topic.includes(d_topic)) {
                 let _msg = message.toString('hex');
                 parseMavFromDrone(_msg);
@@ -133,7 +133,7 @@ function mqtt_connect(serverip, d_topic, t_topic) {
             }
         })
 
-        mqtt_client.on('error', function (err) {
+        mobius_mqtt_client.on('error', (err) => {
             console.log('[mqtt] (error) ' + err.message);
         })
     }
@@ -165,6 +165,14 @@ function parseMavFromDrone(mavPacket) {
         }
 
         if (msg_id === mavlink.MAVLINK_MSG_ID_HEARTBEAT) { // #00 : HEARTBEAT
+            let my_len = 9;
+            let ar = mavPacket.split('');
+            for (let i = 0; i < (my_len - msg_len); i++) {
+                ar.splice(ar.length-4, 0, '0');
+                ar.splice(ar.length-4, 0, '0');
+            }
+            mavPacket = ar.join('');
+
             let custom_mode = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
             let type = mavPacket.substring(base_offset, base_offset + 2).toLowerCase();
@@ -190,15 +198,23 @@ function parseMavFromDrone(mavPacket) {
             }
         }
         else if (msg_id === mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT) { // #33
+            let my_len = 28;
+            let ar = mavPacket.split('');
+            for (let i = 0; i < (my_len - msg_len); i++) {
+                ar.splice(ar.length - 4, 0, '0');
+                ar.splice(ar.length - 4, 0, '0');
+            }
+            mavPacket = ar.join('');
+
             // var time_boot_ms = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var lat = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let lat = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var lon = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let lon = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var relative_alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let relative_alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
 
             if (sys_id === parseInt(drone_info.system_id)) {
                 fc.global_position_int = {};
@@ -261,7 +277,7 @@ function init() {
     cmd_topic = '/Mobius/' + drone_info.gcs + '/GCS_Data/' + drone_info.drone;
 
     target_topic = '/Mobius/' + drone_info.follow_target.gcs + '/Drone_Data/' + drone_info.follow_target.drone;
-    mqtt_connect(drone_info.host, drone_topic, target_topic);
+    mobius_mqtt_connect(drone_info.host, drone_topic, target_topic);
 
     setInterval(goto_command, 5000);
 }
@@ -376,12 +392,12 @@ function send_set_mode_command(pub_topic, target_sys_id, target_mode) {
     btn_params.custom_mode = custom_mode;
 
     try {
-        var msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_SET_MODE, btn_params);
-        if (msg === null) {
+        let msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_SET_MODE, btn_params);
+        if (!msg) {
             console.log("[send_set_mode_command] mavlink message is null");
         }
         else {
-            mqtt_client.publish(pub_topic, msg);
+            mobius_mqtt_client.publish(pub_topic, msg);
         }
     }
     catch (ex) {
@@ -390,7 +406,7 @@ function send_set_mode_command(pub_topic, target_sys_id, target_mode) {
 }
 
 function send_goto_command(pub_topic, target_sys_id, latitude, longitude, rel_altitude) {
-    var btn_params = {};
+    let btn_params = {};
     btn_params.target_system = target_sys_id;
     btn_params.target_component = 1;
     btn_params.seq = 0;
@@ -410,12 +426,12 @@ function send_goto_command(pub_topic, target_sys_id, latitude, longitude, rel_al
     //console.log(latitude, longitude, rel_altitude);
 
     try {
-        var msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_MISSION_ITEM, btn_params);
-        if (msg == null) {
+        let msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_MISSION_ITEM, btn_params);
+        if (!msg) {
             console.log("[send_goto_command] mavlink message is null");
         }
         else {
-            mqtt_client.publish(pub_topic, msg);
+            mobius_mqtt_client.publish(pub_topic, msg);
         }
     }
     catch (ex) {
@@ -424,7 +440,7 @@ function send_goto_command(pub_topic, target_sys_id, latitude, longitude, rel_al
 }
 
 function send_change_speed_command(pub_topic, target_sys_id, target_speed) {
-    var btn_params = {};
+    let btn_params = {};
     btn_params.target_system = target_sys_id;
     btn_params.target_component = 1;
     btn_params.command = mavlink.MAV_CMD_DO_CHANGE_SPEED;
@@ -438,12 +454,12 @@ function send_change_speed_command(pub_topic, target_sys_id, target_speed) {
     btn_params.param7 = 0; // Empty
 
     try {
-        var msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_COMMAND_LONG, btn_params);
-        if (msg == null) {
+        let msg = mavlinkGenerateMessage(255, 0xbe, mavlink.MAVLINK_MSG_ID_COMMAND_LONG, btn_params);
+        if (!msg) {
             console.log("[send_change_speed_command] mavlink message is null");
         }
         else {
-            mqtt_client.publish(pub_topic, msg);
+            mobius_mqtt_client.publish(pub_topic, msg);
         }
     }
     catch (ex) {

@@ -34,6 +34,7 @@ let fc = {
 let mobius_mqtt_client = null;
 let drone_topic = '';
 let cmd_topic = '';
+let gcs_gpi_topic = '';
 
 let gcs_lat = 0;
 let gcs_lon = 0;
@@ -93,6 +94,9 @@ gps.on("data", data => {
     else if (data.type === 'VTG') {
         // console.log('VTG', data);
     }
+    if (mobius_mqtt_client) {
+        mobius_mqtt_client.publish(gcs_gpi_topic, JSON.stringify({lat: gcs_lat, lon: gcs_lon}));
+    }
 });
 
 parser.on("data", data => {
@@ -120,6 +124,7 @@ function init() {
 
     drone_topic = '/Mobius/' + drone_info.gcs + '/Drone_Data/' + drone_info.drone;
     cmd_topic = '/Mobius/' + drone_info.gcs + '/GCS_Data/' + drone_info.drone;
+    gcs_gpi_topic = '/Mobius/' + drone_info.gcs + '/Gcs_Gpi_Data/' + drone_info.drone;
 
     mobius_mqtt_connect(drone_info.host, drone_topic);
 
@@ -173,6 +178,7 @@ let mavVersion = 'v1';
 function parseMavFromDrone(mavPacket) {
     try {
         let ver = mavPacket.substring(0, 2);
+        let msg_len = parseInt(mavPacket.substring(2, 4), 16);
         let sys_id = '';
         let msg_id;
         let base_offset;
@@ -191,6 +197,14 @@ function parseMavFromDrone(mavPacket) {
         }
 
         if (msg_id === mavlink.MAVLINK_MSG_ID_HEARTBEAT) { // #00 : HEARTBEAT
+            let my_len = 9;
+            let ar = mavPacket.split('');
+            for (let i = 0; i < (my_len - msg_len); i++) {
+                ar.splice(ar.length-4, 0, '0');
+                ar.splice(ar.length-4, 0, '0');
+            }
+            mavPacket = ar.join('');
+
             let custom_mode = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
             let type = mavPacket.substring(base_offset, base_offset + 2).toLowerCase();
@@ -250,15 +264,23 @@ function parseMavFromDrone(mavPacket) {
             }
         }
         else if (msg_id === mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT) { // #33
+            let my_len = 28;
+            let ar = mavPacket.split('');
+            for (let i = 0; i < (my_len - msg_len); i++) {
+                ar.splice(ar.length - 4, 0, '0');
+                ar.splice(ar.length - 4, 0, '0');
+            }
+            mavPacket = ar.join('');
+
             // var time_boot_ms = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var lat = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let lat = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var lon = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let lon = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
-            var relative_alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
+            let relative_alt = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
 
             if (sys_id === parseInt(drone_info.system_id)) {
                 fc.global_position_int = {};
@@ -269,6 +291,17 @@ function parseMavFromDrone(mavPacket) {
             }
         }
         else if (msg_id === mavlink.MAVLINK_MSG_ID_HOME_POSITION) {
+            let my_len = 52;
+            if (ver === 'fd') {
+                my_len += 4;
+            }
+            let ar = mavPacket.split('');
+            for (let i = 0; i < (my_len - msg_len); i++) {
+                ar.splice(ar.length - 4, 0, '0');
+                ar.splice(ar.length - 4, 0, '0');
+            }
+            mavPacket = ar.join('');
+
             let lat = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
             base_offset += 8;
             let lon = mavPacket.substring(base_offset, base_offset + 8).toLowerCase();
