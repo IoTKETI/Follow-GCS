@@ -95,7 +95,9 @@ gps.on("data", data => {
         // console.log('VTG', data);
     }
     if (mobius_mqtt_client) {
-        mobius_mqtt_client.publish(gcs_gpi_topic, JSON.stringify({lat: gcs_lat, lon: gcs_lon}));
+        mobius_mqtt_client.publish(gcs_gpi_topic, JSON.stringify({lat: gcs_lat, lon: gcs_lon}), () => {
+            console.log('Send GCS location(' + gcs_lat + ':' + gcs_lon + ') to ' + gcs_gpi_topic);
+        });
     }
 });
 
